@@ -103,7 +103,6 @@ const getFiles = async (req, res) => {
   }
 };
 
-// Rename file
 const renameFile = async (req, res) => {
   try {
     const { id } = req.params;
@@ -120,10 +119,9 @@ const renameFile = async (req, res) => {
        SET name = $1,
            updated_at = NOW()
        WHERE id = $2
-       AND owner_id = $3
        AND is_deleted = false
        RETURNING *`,
-      [name.trim(), id, req.user.id]
+      [name.trim(), id]
     );
 
     if (result.rows.length === 0) {
@@ -145,7 +143,6 @@ const renameFile = async (req, res) => {
   }
 };
 
-// Soft delete file
 const deleteFile = async (req, res) => {
   try {
     const { id } = req.params;
@@ -155,10 +152,9 @@ const deleteFile = async (req, res) => {
        SET is_deleted = true,
            updated_at = NOW()
        WHERE id = $1
-       AND owner_id = $2
        AND is_deleted = false
        RETURNING *`,
-      [id, req.user.id]
+      [id]
     );
 
     if (result.rows.length === 0) {
@@ -180,10 +176,70 @@ const deleteFile = async (req, res) => {
   }
 };
 
+
+const getSignedUrl = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get file from database
+    const fileResult = await pool.query(
+      `SELECT
+         id,
+         name,
+         mime_type,
+         storage_key,
+         owner_id,
+         is_deleted
+       FROM files
+       WHERE id = $1
+       AND is_deleted = false`,
+      [id]
+    );
+
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({
+        message: "File not found",
+      });
+    }
+
+    const file = fileResult.rows[0];
+
+    // Generate signed URL
+    const { data, error } = await supabase.storage
+      .from(process.env.SUPABASE_BUCKET)
+      .createSignedUrl(file.storage_key, 60 * 60);
+
+    if (error) {
+      console.error("Supabase signed URL error:", error);
+
+      return res.status(500).json({
+        message: "Failed to generate signed URL",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Signed URL generated successfully",
+      signedUrl: data.signedUrl,
+      expiresIn: 3600,
+      file: {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mime_type,
+      },
+    });
+  } catch (error) {
+    console.error("Get signed URL error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   uploadFile,
   getFiles,
   renameFile,
   deleteFile,
-
+  getSignedUrl
 };
