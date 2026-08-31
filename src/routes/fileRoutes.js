@@ -1,6 +1,6 @@
 const express = require("express");
 
-const { uploadFile } = require("../controllers/fileController");
+const { uploadFile, getFiles, renameFile, deleteFile } = require("../controllers/fileController");
 const authenticateToken = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
@@ -12,5 +12,11 @@ router.post(
   upload.single("file"),
   uploadFile
 );
+
+router.get("/", authenticateToken, getFiles);
+
+router.patch("/:id", authenticateToken, renameFile);
+
+router.delete("/:id", authenticateToken, deleteFile);
 
 module.exports = router;

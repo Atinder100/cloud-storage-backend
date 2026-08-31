@@ -5,6 +5,7 @@ const pool = require("./src/config/db");
 const authRoutes = require("./src/routes/authRoutes");
 const passport = require("./src/config/passport");
 const fileRoutes = require("./src/routes/fileRoutes");
+const folderRoutes = require("./src/routes/folderRoutes");
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ app.use(express.json());
 app.use(passport.initialize());
 app.use("/api/auth", authRoutes);
 app.use("/api/files", fileRoutes);
+app.use("/api/folders", folderRoutes);
 
 app.get("/", (req, res) => {
   res.json({
