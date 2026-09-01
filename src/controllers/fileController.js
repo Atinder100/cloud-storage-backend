@@ -67,9 +67,26 @@ const uploadFile = async (req, res) => {
   }
 };
 
-// Get user's files
 const getFiles = async (req, res) => {
   try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit) || 20, 1),
+      100
+    );
+
+    const offset = (page - 1) * limit;
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM files
+       WHERE owner_id = $1
+       AND is_deleted = false`,
+      [req.user.id]
+    );
+
+    const total = parseInt(countResult.rows[0].total, 10);
+
     const result = await pool.query(
       `SELECT
         id,
@@ -87,12 +104,23 @@ const getFiles = async (req, res) => {
        FROM files
        WHERE owner_id = $1
        AND is_deleted = false
-       ORDER BY created_at DESC`,
-      [req.user.id]
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [req.user.id, limit, offset]
     );
+
+    const totalPages = Math.ceil(total / limit);
 
     return res.status(200).json({
       files: result.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
     });
   } catch (error) {
     console.error("Get files error:", error);
@@ -236,10 +264,59 @@ const getSignedUrl = async (req, res) => {
   }
 };
 
+const searchFiles = async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || !q.trim()) {
+      return res.status(400).json({
+        message: "Search query is required",
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT
+        id,
+        name,
+        mime_type,
+        size_bytes,
+        storage_key,
+        owner_id,
+        folder_id,
+        created_at,
+        updated_at,
+        ts_rank(
+          to_tsvector('english', name),
+          plainto_tsquery('english', $1)
+        ) AS rank
+      FROM files
+      WHERE owner_id = $2
+        AND is_deleted = false
+        AND to_tsvector('english', name)
+            @@ plainto_tsquery('english', $1)
+      ORDER BY rank DESC, created_at DESC`,
+      [q.trim(), req.user.id]
+    );
+
+    return res.status(200).json({
+      message: "Search completed successfully",
+      count: result.rows.length,
+      files: result.rows,
+    });
+  } catch (error) {
+    console.error("Search files error:", error);
+
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   uploadFile,
   getFiles,
   renameFile,
   deleteFile,
-  getSignedUrl
+  getSignedUrl,
+  searchFiles,
 };
