@@ -12,10 +12,21 @@ const passport = require("../config/passport");
 
 const router = express.Router();
 
-router.post("/signup", signup);
+const COOKIE_NAME = "authToken";
 
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: "/",
+};
+
+// Email/password authentication
+router.post("/signup", signup);
 router.post("/login", login);
 
+// Get currently authenticated user
 router.get("/me", authenticateToken, (req, res) => {
   res.json({
     message: "You are authenticated",
@@ -23,6 +34,7 @@ router.get("/me", authenticateToken, (req, res) => {
   });
 });
 
+// Logout
 router.post("/logout", authenticateToken, logout);
 
 // Start Google OAuth
@@ -52,11 +64,13 @@ router.get(
       }
     );
 
-    res.json({
-      message: "Google authentication successful",
-      user: req.user,
-      token,
-    });
+    // Store JWT in the same httpOnly cookie
+    // used by email/password authentication.
+    res.cookie(COOKIE_NAME, token, cookieOptions);
+
+    // Do not send the JWT to the frontend.
+    // Redirect the browser back to the frontend.
+    res.redirect(`${process.env.FRONTEND_URL}/login?oauth=success`);
   }
 );
 

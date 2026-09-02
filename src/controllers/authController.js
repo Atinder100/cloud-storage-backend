@@ -3,6 +3,16 @@ const jwt = require("jsonwebtoken");
 const pool = require("../config/db");
 const { signupSchema, loginSchema } = require("../validators/authValidator");
 
+const COOKIE_NAME = "authToken";
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: "/",
+};
+
 const signup = async (req, res) => {
   try {
     // Validate request body
@@ -54,10 +64,13 @@ const signup = async (req, res) => {
       }
     );
 
+    // Store JWT in httpOnly cookie
+    res.cookie(COOKIE_NAME, token, cookieOptions);
+
+    // Do not return JWT in response
     return res.status(201).json({
       message: "Signup successful",
       user,
-      token,
     });
   } catch (error) {
     console.error("Signup error:", error);
@@ -125,10 +138,13 @@ const login = async (req, res) => {
     // Never return password_hash
     delete user.password_hash;
 
+    // Store JWT in httpOnly cookie
+    res.cookie(COOKIE_NAME, token, cookieOptions);
+
+    // Do not return JWT in response
     return res.status(200).json({
       message: "Login successful",
       user,
-      token,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -141,6 +157,14 @@ const login = async (req, res) => {
 
 const logout = async (req, res) => {
   try {
+    // Remove authentication cookie
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+    });
+
     return res.status(200).json({
       message: "Logout successful",
     });
