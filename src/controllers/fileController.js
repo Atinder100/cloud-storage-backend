@@ -37,23 +37,24 @@ const uploadFile = async (req, res) => {
 
     // Save file metadata in PostgreSQL
     const result = await pool.query(
-  `INSERT INTO files (
-    name,
-    mime_type,
-    size_bytes,
-    storage_key,
-    owner_id
-  )
-  VALUES ($1, $2, $3, $4, $5)
-  RETURNING *`,
-  [
-    file.originalname,
-    file.mimetype,
-    file.size,
-    storageFileName,
-    req.user.id,
-  ]
-);
+      `INSERT INTO files (
+        name,
+        mime_type,
+        size_bytes,
+        storage_key,
+        owner_id
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *`,
+      [
+        file.originalname,
+        file.mimetype,
+        file.size,
+        storageFileName,
+        req.user.id,
+      ]
+    );
+
     return res.status(201).json({
       message: "File uploaded successfully",
       file: result.rows[0],
@@ -70,6 +71,7 @@ const uploadFile = async (req, res) => {
 const getFiles = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
+
     const limit = Math.min(
       Math.max(parseInt(req.query.limit) || 20, 1),
       100
@@ -77,37 +79,91 @@ const getFiles = async (req, res) => {
 
     const offset = (page - 1) * limit;
 
-    const countResult = await pool.query(
-      `SELECT COUNT(*) AS total
-       FROM files
-       WHERE owner_id = $1
-       AND is_deleted = false`,
-      [req.user.id]
-    );
+    const { folderId } = req.query;
+
+    let countQuery;
+    let countValues;
+
+    let filesQuery;
+    let filesValues;
+
+    // If folderId is provided, return files inside that folder.
+    if (folderId) {
+      countQuery = `
+        SELECT COUNT(*) AS total
+        FROM files
+        WHERE owner_id = $1
+        AND folder_id = $2
+        AND is_deleted = false
+      `;
+
+      countValues = [req.user.id, folderId];
+
+      filesQuery = `
+        SELECT
+          id,
+          name,
+          mime_type,
+          size_bytes,
+          storage_key,
+          owner_id,
+          folder_id,
+          version_id,
+          checksum,
+          is_deleted,
+          created_at,
+          updated_at
+        FROM files
+        WHERE owner_id = $1
+        AND folder_id = $2
+        AND is_deleted = false
+        ORDER BY created_at DESC
+        LIMIT $3 OFFSET $4
+      `;
+
+      filesValues = [req.user.id, folderId, limit, offset];
+    } else {
+      // If no folderId is provided, return only root-level files.
+      countQuery = `
+        SELECT COUNT(*) AS total
+        FROM files
+        WHERE owner_id = $1
+        AND folder_id IS NULL
+        AND is_deleted = false
+      `;
+
+      countValues = [req.user.id];
+
+      filesQuery = `
+        SELECT
+          id,
+          name,
+          mime_type,
+          size_bytes,
+          storage_key,
+          owner_id,
+          folder_id,
+          version_id,
+          checksum,
+          is_deleted,
+          created_at,
+          updated_at
+        FROM files
+        WHERE owner_id = $1
+        AND folder_id IS NULL
+        AND is_deleted = false
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+      `;
+
+      filesValues = [req.user.id, limit, offset];
+    }
+
+    const countResult = await pool.query(countQuery, countValues);
 
     const total = parseInt(countResult.rows[0].total, 10);
 
-    const result = await pool.query(
-      `SELECT
-        id,
-        name,
-        mime_type,
-        size_bytes,
-        storage_key,
-        owner_id,
-        folder_id,
-        version_id,
-        checksum,
-        is_deleted,
-        created_at,
-        updated_at
-       FROM files
-       WHERE owner_id = $1
-       AND is_deleted = false
-       ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [req.user.id, limit, offset]
-    );
+    const result = await pool.query(filesQuery, filesValues);
 
     const totalPages = Math.ceil(total / limit);
 
@@ -196,14 +252,13 @@ const deleteFile = async (req, res) => {
       file: result.rows[0],
     });
   } catch (error) {
-    console.error("Delete file error:", error);
+    console.error("File delete error:", error);
 
     return res.status(500).json({
       message: "Internal server error",
     });
   }
 };
-
 
 const getSignedUrl = async (req, res) => {
   try {
