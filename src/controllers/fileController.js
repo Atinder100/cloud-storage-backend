@@ -13,6 +13,25 @@ const uploadFile = async (req, res) => {
       });
     }
 
+    const { folderId } = req.body;
+
+    // If a folderId is provided, verify that the folder belongs to the user.
+    if (folderId) {
+      const folderResult = await pool.query(
+        `SELECT id
+         FROM folders
+         WHERE id = $1
+         AND owner_id = $2`,
+        [folderId, req.user.id]
+      );
+
+      if (folderResult.rows.length === 0) {
+        return res.status(404).json({
+          message: "Folder not found",
+        });
+      }
+    }
+
     const file = req.file;
     const fileExtension = path.extname(file.originalname);
 
@@ -42,9 +61,10 @@ const uploadFile = async (req, res) => {
         mime_type,
         size_bytes,
         storage_key,
-        owner_id
+        owner_id,
+        folder_id
       )
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *`,
       [
         file.originalname,
@@ -52,6 +72,7 @@ const uploadFile = async (req, res) => {
         file.size,
         storageFileName,
         req.user.id,
+        folderId || null,
       ]
     );
 
@@ -87,7 +108,6 @@ const getFiles = async (req, res) => {
     let filesQuery;
     let filesValues;
 
-    // If folderId is provided, return files inside that folder.
     if (folderId) {
       countQuery = `
         SELECT COUNT(*) AS total
@@ -123,7 +143,6 @@ const getFiles = async (req, res) => {
 
       filesValues = [req.user.id, folderId, limit, offset];
     } else {
-      // If no folderId is provided, return only root-level files.
       countQuery = `
         SELECT COUNT(*) AS total
         FROM files
@@ -264,7 +283,6 @@ const getSignedUrl = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get file from database
     const fileResult = await pool.query(
       `SELECT
          id,
@@ -287,7 +305,6 @@ const getSignedUrl = async (req, res) => {
 
     const file = fileResult.rows[0];
 
-    // Generate signed URL
     const { data, error } = await supabase.storage
       .from(process.env.SUPABASE_BUCKET)
       .createSignedUrl(file.storage_key, 60 * 60);
